@@ -415,9 +415,14 @@ _st_create_shadow_pipeline_from_actor (StShadow     *shadow_spec,
 {
   CoglPipeline *shadow_pipeline = NULL;
   ClutterActorBox box;
+  float resource_scale;
   float width, height;
 
+  if (!clutter_actor_get_resource_scale (actor, &resource_scale))
+    return NULL;
+
   clutter_actor_get_allocation_box (actor, &box);
+  clutter_actor_box_scale (&box, resource_scale);
   clutter_actor_box_get_size (&box, &width, &height);
 
   if (width == 0 || height == 0)
