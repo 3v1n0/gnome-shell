@@ -276,13 +276,39 @@ st_icon_update_shadow_pipeline (StIcon *icon)
 
   if (priv->shadow_spec)
    priv->shadow_pipeline = _st_create_shadow_pipeline_from_actor (priv->shadow_spec, priv->icon_texture);
+
+}
+
+static void
+on_texture_size_notify (ClutterTexture *texture,
+                        GParamSpec     *pspec,
+                        StIcon         *icon)
+{
+  g_signal_handlers_disconnect_by_func (texture, on_texture_size_notify, icon);
+  st_icon_update_shadow_pipeline (icon);
+}
+
+static void
+st_icon_update_shadow_pipeline_on_allocation (StIcon *icon)
+{
+  StIconPrivate *priv = icon->priv;
+
+  if (clutter_actor_has_allocation (CLUTTER_ACTOR (priv->icon_texture)))
+    {
+      st_icon_update_shadow_pipeline (icon);
+    }
+  else
+    {
+      g_signal_connect_object (priv->icon_texture, "notify::size",
+                               G_CALLBACK (on_texture_size_notify), icon, 0);
+    }
 }
 
 static void
 on_pixbuf_changed (ClutterTexture *texture,
                    StIcon         *icon)
 {
-  st_icon_update_shadow_pipeline (icon);
+  st_icon_update_shadow_pipeline_on_allocation (icon);
 }
 
 static void
@@ -307,7 +333,7 @@ st_icon_finish_update (StIcon *icon)
       /* Remove the temporary ref we added */
       g_object_unref (priv->icon_texture);
 
-      st_icon_update_shadow_pipeline (icon);
+      st_icon_update_shadow_pipeline_on_allocation (icon);
 
       /* "pixbuf-change" is actually a misnomer for "texture-changed" */
       g_signal_connect_object (priv->icon_texture, "pixbuf-change",
