@@ -237,6 +237,23 @@ compute_pixbuf_scale (gint      width,
     }
 }
 
+static int
+get_adjusted_size_for_scale (int     size,
+                             int     paint_scale,
+                             gfloat  resource_scale,
+                             gint   *out_scale)
+{
+  int scale = MAX (1, paint_scale * resource_scale);
+
+  if (fmodf (resource_scale, 1.0f) != 0.0f)
+    size += (ceilf (size * resource_scale) - (size * scale)) / scale;
+
+  if (out_scale)
+    *out_scale = scale;
+
+  return size;
+}
+
 static void
 rgba_from_clutter (GdkRGBA      *rgba,
                    ClutterColor *color)
@@ -894,14 +911,11 @@ st_texture_cache_load_gicon (StTextureCache    *cache,
   else
     lookup_flags |= GTK_ICON_LOOKUP_DIR_LTR;
 
-  scale = MAX (1, paint_scale * resource_scale);
-  resource_size = size;
-
-  if (fmodf (resource_scale, 1.0f) != 0.0f)
-    resource_size += (ceilf (size * resource_scale) - (scale * size)) / scale;
+  resource_size = get_adjusted_size_for_scale (size, paint_scale, resource_scale, &scale);
 
   info = gtk_icon_theme_lookup_by_gicon_for_scale (theme, icon,
-                                                   resource_size, scale,
+                                                   resource_size,
+                                                   scale,
                                                    lookup_flags);
   if (info == NULL)
     return NULL;
@@ -1159,7 +1173,7 @@ load_sliced_image (GTask        *result,
  * @file: A #GFile
  * @grid_width: Width in pixels
  * @grid_height: Height in pixels
- * @scale: Scale factor of the display
+ * @paint_scale: Scale factor of the display
  * @load_callback: (scope async) (nullable): Function called when the image is loaded, or %NULL
  * @user_data: Data to pass to the load callback
  *
@@ -1175,23 +1189,25 @@ st_texture_cache_load_sliced_image (StTextureCache *cache,
                                     GFile          *file,
                                     gint            grid_width,
                                     gint            grid_height,
-                                    gint            scale,
+                                    gint            paint_scale,
+                                    gfloat          resource_scale,
                                     GFunc           load_callback,
                                     gpointer        user_data)
 {
   AsyncImageData *data;
   GTask *result;
+  gint scale;
   ClutterActor *actor = clutter_actor_new ();
-
   data = g_new0 (AsyncImageData, 1);
-  data->grid_width = grid_width;
-  data->grid_height = grid_height;
+  data->grid_width = get_adjusted_size_for_scale (grid_width, paint_scale, resource_scale, &scale);
+  data->grid_height = get_adjusted_size_for_scale (grid_height, paint_scale, resource_scale, NULL);
   data->scale_factor = scale;
   data->gfile = g_object_ref (file);
   data->actor = actor;
   data->load_callback = load_callback;
   data->load_callback_data = user_data;
   g_object_ref (G_OBJECT (actor));
+
 
   result = g_task_new (cache, NULL, on_sliced_image_loaded, data);
   g_task_set_task_data (result, data, on_data_destroy);
@@ -1208,7 +1224,8 @@ st_texture_cache_load_sliced_image (StTextureCache *cache,
  * @file: a #GFile of the image file from which to create a pixbuf
  * @available_width: available width for the image, can be -1 if not limited
  * @available_height: available height for the image, can be -1 if not limited
- * @scale: scale factor of the display
+ * @paint_scale: scale factor of the display
+ * @resource_scale: Resource scale factor
  *
  * Asynchronously load an image.   Initially, the returned texture will have a natural
  * size of zero.  At some later point, either the image will be loaded successfully
@@ -1221,18 +1238,25 @@ st_texture_cache_load_file_async (StTextureCache *cache,
                                   GFile          *file,
                                   int             available_width,
                                   int             available_height,
-                                  int             scale)
+                                  int             paint_scale,
+                                  gfloat          resource_scale)
 {
   ClutterActor *texture;
   AsyncTextureLoadData *request;
   StTextureCachePolicy policy;
   gchar *key;
+  int scale;
 
-  key = g_strdup_printf (CACHE_PREFIX_FILE "%u", g_file_hash (file));
+  key = g_strdup_printf (CACHE_PREFIX_FILE "%u%f", g_file_hash (file), resource_scale);
 
   policy = ST_TEXTURE_CACHE_POLICY_NONE; /* XXX */
 
   texture = (ClutterActor *) create_default_texture ();
+
+  available_width = get_adjusted_size_for_scale (available_width, paint_scale,
+                                                 resource_scale, &scale);
+  available_height = get_adjusted_size_for_scale (available_height, paint_scale,
+                                                 resource_scale, NULL);
 
   if (ensure_request (cache, key, policy, &request, texture))
     {
@@ -1266,20 +1290,32 @@ st_texture_cache_load_file_sync_to_cogl_texture (StTextureCache *cache,
                                                  GFile          *file,
                                                  int             available_width,
                                                  int             available_height,
-                                                 int             scale,
+                                                 int             paint_scale,
+                                                 gfloat          resource_scale,
                                                  GError         **error)
 {
   CoglTexture *texdata;
   GdkPixbuf *pixbuf;
   char *key;
 
-  key = g_strdup_printf (CACHE_PREFIX_FILE "%u", g_file_hash (file));
+  key = g_strdup_printf (CACHE_PREFIX_FILE "%u%f", g_file_hash (file), resource_scale);
 
   texdata = g_hash_table_lookup (cache->priv->keyed_cache, key);
 
   if (texdata == NULL)
     {
-      pixbuf = impl_load_pixbuf_file (file, available_width, available_height, scale, error);
+      int scale;
+      available_width = get_adjusted_size_for_scale (available_width,
+                                                     paint_scale,
+                                                     resource_scale,
+                                                     &scale);
+      available_height = get_adjusted_size_for_scale (available_height,
+                                                      paint_scale,
+                                                      resource_scale,
+                                                      NULL);
+
+      pixbuf = impl_load_pixbuf_file (file, available_width, available_height,
+                                      scale, error);
       if (!pixbuf)
         goto out;
 
@@ -1308,20 +1344,32 @@ st_texture_cache_load_file_sync_to_cairo_surface (StTextureCache        *cache,
                                                   GFile                 *file,
                                                   int                    available_width,
                                                   int                    available_height,
-                                                  int                    scale,
+                                                  int                    paint_scale,
+                                                  gfloat                 resource_scale,
                                                   GError               **error)
 {
   cairo_surface_t *surface;
   GdkPixbuf *pixbuf;
   char *key;
 
-  key = g_strdup_printf (CACHE_PREFIX_FILE_FOR_CAIRO "%u", g_file_hash (file));
+  key = g_strdup_printf (CACHE_PREFIX_FILE_FOR_CAIRO "%u%f", g_file_hash (file), resource_scale);
 
   surface = g_hash_table_lookup (cache->priv->keyed_cache, key);
 
   if (surface == NULL)
     {
-      pixbuf = impl_load_pixbuf_file (file, available_width, available_height, scale, error);
+      int scale;
+      available_width = get_adjusted_size_for_scale (available_width,
+                                                     paint_scale,
+                                                     resource_scale,
+                                                     &scale);
+      available_height = get_adjusted_size_for_scale (available_height,
+                                                      paint_scale,
+                                                      resource_scale,
+                                                      NULL);
+
+      pixbuf = impl_load_pixbuf_file (file, available_width, available_height,
+                                      scale, error);
       if (!pixbuf)
         goto out;
 
@@ -1348,7 +1396,8 @@ out:
  * st_texture_cache_load_file_to_cogl_texture: (skip)
  * @cache: A #StTextureCache
  * @file: A #GFile in supported image format
- * @scale: Scale factor of the display
+ * @paint_scale: Scale factor of the display
+ * @resource_scale: Resource scale factor
  *
  * This function synchronously loads the given file path
  * into a COGL texture.  On error, a warning is emitted
@@ -1359,13 +1408,15 @@ out:
 CoglTexture *
 st_texture_cache_load_file_to_cogl_texture (StTextureCache *cache,
                                             GFile          *file,
-                                            gint            scale)
+                                            gint            paint_scale,
+                                            gfloat          resource_scale)
 {
   CoglTexture *texture;
   GError *error = NULL;
 
   texture = st_texture_cache_load_file_sync_to_cogl_texture (cache, ST_TEXTURE_CACHE_POLICY_FOREVER,
-                                                             file, -1, -1, scale, &error);
+                                                             file, -1, -1, paint_scale, resource_scale,
+                                                             &error);
 
   if (texture == NULL)
     {
@@ -1382,7 +1433,8 @@ st_texture_cache_load_file_to_cogl_texture (StTextureCache *cache,
  * st_texture_cache_load_file_to_cairo_surface:
  * @cache: A #StTextureCache
  * @file: A #GFile in supported image format
- * @scale: Scale factor of the display
+ * @paint_scale: Scale factor of the display
+ * @resource_scale: Resource scale factor
  *
  * This function synchronously loads the given file path
  * into a cairo surface.  On error, a warning is emitted
@@ -1393,13 +1445,15 @@ st_texture_cache_load_file_to_cogl_texture (StTextureCache *cache,
 cairo_surface_t *
 st_texture_cache_load_file_to_cairo_surface (StTextureCache *cache,
                                              GFile          *file,
-                                             gint            scale)
+                                             gint            paint_scale,
+                                             gfloat          resource_scale)
 {
   cairo_surface_t *surface;
   GError *error = NULL;
 
   surface = st_texture_cache_load_file_sync_to_cairo_surface (cache, ST_TEXTURE_CACHE_POLICY_FOREVER,
-                                                              file, -1, -1, scale, &error);
+                                                              file, -1, -1, paint_scale, resource_scale,
+                                                              &error);
 
   if (surface == NULL)
     {
