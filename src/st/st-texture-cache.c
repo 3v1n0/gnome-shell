@@ -268,7 +268,7 @@ rgba_from_clutter (GdkRGBA      *rgba,
 typedef struct {
   int width;
   int height;
-  int scale;
+  float scale;
 } Dimensions;
 
 /* This struct corresponds to a request for an texture.
@@ -281,7 +281,7 @@ typedef struct {
 
   guint width;
   guint height;
-  guint scale;
+  gfloat scale;
   GSList *textures;
 
   GtkIconInfo *icon_info;
@@ -335,7 +335,7 @@ on_image_size_prepared (GdkPixbufLoader *pixbuf_loader,
   Dimensions *available_dimensions = data;
   int available_width = available_dimensions->width;
   int available_height = available_dimensions->height;
-  int scale_factor = available_dimensions->scale;
+  float scale_factor = available_dimensions->scale;
   int scaled_width;
   int scaled_height;
 
@@ -343,8 +343,8 @@ on_image_size_prepared (GdkPixbufLoader *pixbuf_loader,
                         &scaled_width, &scaled_height);
 
   gdk_pixbuf_loader_set_size (pixbuf_loader,
-                              scaled_width * scale_factor,
-                              scaled_height * scale_factor);
+                              (float) scaled_width * scale_factor,
+                              (float) scaled_height * scale_factor);
 }
 
 static GdkPixbuf *
@@ -352,7 +352,7 @@ impl_load_pixbuf_data (const guchar   *data,
                        gsize           size,
                        int             available_width,
                        int             available_height,
-                       int             scale,
+                       float           scale,
                        GError        **error)
 {
   GdkPixbufLoader *pixbuf_loader = NULL;
@@ -427,7 +427,7 @@ static GdkPixbuf *
 impl_load_pixbuf_file (GFile          *file,
                        int             available_width,
                        int             available_height,
-                       int             scale,
+                       float           scale,
                        GError        **error)
 {
   GdkPixbuf *pixbuf = NULL;
@@ -502,7 +502,8 @@ pixbuf_to_cogl_texture (GdkPixbuf *pixbuf)
 }
 
 static cairo_surface_t *
-pixbuf_to_cairo_surface (GdkPixbuf *pixbuf)
+pixbuf_to_cairo_surface (GdkPixbuf *pixbuf,
+                         float resource_scale)
 {
   cairo_surface_t *dummy_surface;
   cairo_pattern_t *pattern;
@@ -1196,12 +1197,11 @@ st_texture_cache_load_sliced_image (StTextureCache *cache,
 {
   AsyncImageData *data;
   GTask *result;
-  gint scale;
   ClutterActor *actor = clutter_actor_new ();
   data = g_new0 (AsyncImageData, 1);
-  data->grid_width = get_adjusted_size_for_scale (grid_width, paint_scale, resource_scale, &scale);
-  data->grid_height = get_adjusted_size_for_scale (grid_height, paint_scale, resource_scale, NULL);
-  data->scale_factor = scale;
+  data->grid_width = grid_width;
+  data->grid_height = grid_height;
+  data->scale_factor = (float) paint_scale * resource_scale;
   data->gfile = g_object_ref (file);
   data->actor = actor;
   data->load_callback = load_callback;
@@ -1245,18 +1245,12 @@ st_texture_cache_load_file_async (StTextureCache *cache,
   AsyncTextureLoadData *request;
   StTextureCachePolicy policy;
   gchar *key;
-  int scale;
 
   key = g_strdup_printf (CACHE_PREFIX_FILE "%u%f", g_file_hash (file), resource_scale);
 
   policy = ST_TEXTURE_CACHE_POLICY_NONE; /* XXX */
 
   texture = (ClutterActor *) create_default_texture ();
-
-  available_width = get_adjusted_size_for_scale (available_width, paint_scale,
-                                                 resource_scale, &scale);
-  available_height = get_adjusted_size_for_scale (available_height, paint_scale,
-                                                 resource_scale, NULL);
 
   if (ensure_request (cache, key, policy, &request, texture))
     {
@@ -1274,7 +1268,7 @@ st_texture_cache_load_file_async (StTextureCache *cache,
       request->policy = policy;
       request->width = available_width;
       request->height = available_height;
-      request->scale = scale;
+      request->scale = (float) paint_scale * resource_scale;
 
       load_texture_async (cache, request);
     }
@@ -1304,18 +1298,9 @@ st_texture_cache_load_file_sync_to_cogl_texture (StTextureCache *cache,
 
   if (texdata == NULL)
     {
-      int scale;
-      available_width = get_adjusted_size_for_scale (available_width,
-                                                     paint_scale,
-                                                     resource_scale,
-                                                     &scale);
-      available_height = get_adjusted_size_for_scale (available_height,
-                                                      paint_scale,
-                                                      resource_scale,
-                                                      NULL);
-
       pixbuf = impl_load_pixbuf_file (file, available_width, available_height,
-                                      scale, error);
+                                      (float) paint_scale * resource_scale,
+                                      error);
       if (!pixbuf)
         goto out;
 
@@ -1358,22 +1343,13 @@ st_texture_cache_load_file_sync_to_cairo_surface (StTextureCache        *cache,
 
   if (surface == NULL)
     {
-      int scale;
-      available_width = get_adjusted_size_for_scale (available_width,
-                                                     paint_scale,
-                                                     resource_scale,
-                                                     &scale);
-      available_height = get_adjusted_size_for_scale (available_height,
-                                                      paint_scale,
-                                                      resource_scale,
-                                                      NULL);
-
       pixbuf = impl_load_pixbuf_file (file, available_width, available_height,
-                                      scale, error);
+                                      (float) paint_scale * resource_scale,
+                                      error);
       if (!pixbuf)
         goto out;
 
-      surface = pixbuf_to_cairo_surface (pixbuf);
+      surface = pixbuf_to_cairo_surface (pixbuf, resource_scale);
       g_object_unref (pixbuf);
 
       if (policy == ST_TEXTURE_CACHE_POLICY_FOREVER)
