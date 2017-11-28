@@ -502,8 +502,7 @@ pixbuf_to_cogl_texture (GdkPixbuf *pixbuf)
 }
 
 static cairo_surface_t *
-pixbuf_to_cairo_surface (GdkPixbuf *pixbuf,
-                         float resource_scale)
+pixbuf_to_cairo_surface (GdkPixbuf *pixbuf)
 {
   cairo_surface_t *dummy_surface;
   cairo_pattern_t *pattern;
@@ -1349,7 +1348,7 @@ st_texture_cache_load_file_sync_to_cairo_surface (StTextureCache        *cache,
       if (!pixbuf)
         goto out;
 
-      surface = pixbuf_to_cairo_surface (pixbuf, resource_scale);
+      surface = pixbuf_to_cairo_surface (pixbuf);
       g_object_unref (pixbuf);
 
       if (policy == ST_TEXTURE_CACHE_POLICY_FOREVER)

@@ -667,8 +667,13 @@ create_cairo_pattern_of_background_image (StThemeNode *node,
                         width, height,
                         background_image_width, background_image_height,
                         &scale_w, &scale_h);
+
+  scale_w /= resource_scale;
+  scale_h /= resource_scale;
+
   if ((scale_w != 1) || (scale_h != 1))
     cairo_matrix_scale (&matrix, 1.0/scale_w, 1.0/scale_h);
+
   background_image_width *= scale_w;
   background_image_height *= scale_h;
 
