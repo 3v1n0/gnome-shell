@@ -430,6 +430,7 @@ get_background_scale (StThemeNode *node,
                       gdouble      painting_area_height,
                       gdouble      background_image_width,
                       gdouble      background_image_height,
+                      gdouble      resource_scale,
                       gdouble     *scale_w,
                       gdouble     *scale_h)
 {
@@ -439,7 +440,7 @@ get_background_scale (StThemeNode *node,
   switch (node->background_size)
     {
       case ST_BACKGROUND_SIZE_AUTO:
-        *scale_w = 1.0;
+        *scale_w = 1.0f / resource_scale;
         break;
       case ST_BACKGROUND_SIZE_CONTAIN:
         *scale_w = MIN (painting_area_width / background_image_width,
@@ -493,6 +494,7 @@ get_background_coordinates (StThemeNode *node,
 static void
 get_background_position (StThemeNode             *self,
                          const ClutterActorBox   *allocation,
+                         float                    resource_scale,
                          ClutterActorBox         *result,
                          ClutterActorBox         *texture_coords)
 {
@@ -513,7 +515,8 @@ get_background_position (StThemeNode             *self,
   get_background_scale (self,
                         painting_area_width, painting_area_height,
                         background_image_width, background_image_height,
-                        &scale_w, &scale_h);
+                        resource_scale, &scale_w, &scale_h);
+
   background_image_width *= scale_w;
   background_image_height *= scale_h;
 
@@ -666,10 +669,7 @@ create_cairo_pattern_of_background_image (StThemeNode *node,
   get_background_scale (node,
                         width, height,
                         background_image_width, background_image_height,
-                        &scale_w, &scale_h);
-
-  scale_w /= resource_scale;
-  scale_h /= resource_scale;
+                        resource_scale, &scale_w, &scale_h);
 
   if ((scale_w != 1) || (scale_h != 1))
     cairo_matrix_scale (&matrix, 1.0/scale_w, 1.0/scale_h);
@@ -2655,21 +2655,13 @@ st_theme_node_paint (StThemeNode           *node,
        */
       has_visible_outline = st_theme_node_has_visible_outline (node);
 
-      get_background_position (node, &allocation, &background_box, &texture_coords);
+      get_background_position (node, &allocation, resource_scale,
+                               &background_box, &texture_coords);
 
       if (has_visible_outline || node->background_repeat)
         cogl_framebuffer_push_rectangle_clip (framebuffer,
                                               allocation.x1, allocation.y1,
                                               allocation.x2, allocation.y2);
-
-
-      if (resource_scale != 1.0f)
-        {
-          cogl_framebuffer_push_matrix (framebuffer);
-          cogl_framebuffer_scale (framebuffer, 1.0f / resource_scale,
-                                               1.0f / resource_scale,
-                                               1.0f);
-        }
 
       /* CSS based drop shadows
        *
@@ -2698,9 +2690,6 @@ st_theme_node_paint (StThemeNode           *node,
 
       if (has_visible_outline || node->background_repeat)
         cogl_framebuffer_pop_clip (framebuffer);
-
-      if (resource_scale != 1.0f)
-        cogl_framebuffer_pop_matrix (framebuffer);
     }
 }
 
