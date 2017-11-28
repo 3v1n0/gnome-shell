@@ -2662,6 +2662,15 @@ st_theme_node_paint (StThemeNode           *node,
                                               allocation.x1, allocation.y1,
                                               allocation.x2, allocation.y2);
 
+
+      if (resource_scale != 1.0f)
+        {
+          cogl_framebuffer_push_matrix (framebuffer);
+          cogl_framebuffer_scale (framebuffer, 1.0f / resource_scale,
+                                               1.0f / resource_scale,
+                                               1.0f);
+        }
+
       /* CSS based drop shadows
        *
        * Drop shadows in ST are modelled after the CSS3 box-shadow property;
@@ -2689,6 +2698,9 @@ st_theme_node_paint (StThemeNode           *node,
 
       if (has_visible_outline || node->background_repeat)
         cogl_framebuffer_pop_clip (framebuffer);
+
+      if (resource_scale != 1.0f)
+        cogl_framebuffer_pop_matrix (framebuffer);
     }
 }
 
