@@ -1179,7 +1179,7 @@ load_sliced_image (GTask        *result,
  *
  * This function reads a single image file which contains multiple images internally.
  * The image file will be divided using @grid_width and @grid_height;
- * note that the dimensions of the image loaded from @path 
+ * note that the dimensions of the image loaded from @path
  * should be a multiple of the specified grid dimensions.
  *
  * Returns: (transfer none): A new #ClutterActor
@@ -1197,16 +1197,20 @@ st_texture_cache_load_sliced_image (StTextureCache *cache,
   AsyncImageData *data;
   GTask *result;
   ClutterActor *actor = clutter_actor_new ();
+
+  g_return_val_if_fail (G_IS_FILE (file), NULL);
+  g_assert (paint_scale > 0);
+  g_assert (resource_scale > 0);
+
   data = g_new0 (AsyncImageData, 1);
   data->grid_width = grid_width;
   data->grid_height = grid_height;
-  data->scale_factor = (float) paint_scale * resource_scale;
+  data->scale_factor = paint_scale * (int) ceilf (resource_scale);
   data->gfile = g_object_ref (file);
   data->actor = actor;
   data->load_callback = load_callback;
   data->load_callback_data = user_data;
   g_object_ref (G_OBJECT (actor));
-
 
   result = g_task_new (cache, NULL, on_sliced_image_loaded, data);
   g_task_set_task_data (result, data, on_data_destroy);
